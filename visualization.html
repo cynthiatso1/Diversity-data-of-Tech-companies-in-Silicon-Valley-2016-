@@ -1,0 +1,298 @@
+<style>
+
+/*.bar {
+  fill: steelblue;
+}*/
+
+.legend {
+    font-size: 60%;
+}
+
+div.tooltip {
+	font-family: sans-serif;
+	position: absolute;
+  	line-height: 1;
+  	padding: 12px;
+	background: rgba(0, 0, 0, 0.8);
+	width: 170px;
+	height: 28px;
+	color: #fff;
+	border-radius: 2px;
+}
+
+</style>
+<svg width="1350" height="670"></svg>
+<script src="//d3js.org/d3.v4.min.js"></script>
+
+<body>
+<script>
+var svg = d3.select("svg"),
+    margin = {top: 20, right: 20, bottom: 30, left: 70},
+    width = +svg.attr("width") - margin.left - margin.right -350,
+    height = +svg.attr("height") - margin.top - margin.bottom -20,
+    g = svg.append("g").attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+//Tooltips
+var tip = d3.select("body").append("div")
+          .attr('class','tooltip')
+          .style("opacity",0);
+
+var x = d3.scaleBand()
+    .rangeRound([0, width])
+    .padding(0.2)
+    .align(0.3);
+
+var y = d3.scaleLinear()
+    .rangeRound([height, 0]);
+
+var z = d3.scaleOrdinal()
+    .range([ "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c" , "#fdbf6f","#a6cee3"]);
+
+var stack = d3.stack()
+    .offset(d3.stackOffsetExpand);
+
+
+//----------------------
+var active_link = "0"; //to control legend selections and hover
+var legendClicked; //to control legend selections
+var legendClassArray = []; //store legend classes to select bars in plotSingle()
+var legendClassArray_orig = []; //orig (with spaces)
+var restoreXFlag = false;
+
+//----------------------
+
+d3.csv("race.csv", function(error, data) {
+  if (error) throw error;
+    
+    z.domain(d3.keys(data[0]).filter(function(key) { return key !== "Company"; }));
+
+  data.forEach(function(d) {
+    var mystate = d.Company; //add to stock code
+    var y0 = 0;
+    //d.ages = color.domain().map(function(name) { return {name: name, y0: y0, y1: y0 += +d[name]}; });
+    d.race = z.domain().map(function(name) {
+      //return { mystate:mystate, name: name, y0: y0, y1: y0 += +d[name]}; });
+      return {
+        mystate:mystate,
+        name: name,
+        y0: y0,
+        y1: y0 += +d[name],
+        value: d[name],
+        y_corrected: 0
+      };
+      });
+    d.total = d.race[d.race.length - 1].y1;
+
+
+});
+
+
+  data.sort(function(a, b) { return b[data.columns[1]] / b.total - a[data.columns[1]] / a.total; });
+
+  x.domain(data.map(function(d) { return d.Company; }));
+  z.domain(data.columns.slice(1));
+
+  var serie = g.selectAll(".serie")
+    .data(stack.keys(data.columns.slice(1))(data))
+    .enter().append("g")
+      .attr("class", "serie")
+      .attr("fill", function(d) { return z(d.key); });
+
+console.log(data)
+
+  // var datakeys = d3.values(data)[0];
+  height_diff = 0;
+
+  serie.selectAll("rect")
+    .data(function(d) { return d; })
+    .enter().append("rect")
+    .attr("class","bar")
+      .attr("x", function(d) { return x(d.data.Company); })
+      .attr("y", function(d) { return y(d[1]); })
+      .attr("height", function(d) { return y(d[0]) - y(d[1]); })
+      .attr("width", x.bandwidth())
+      .on("mouseover",function(d){
+
+      	//mouseover box
+      	  var percentage = 	(y(d[0]) - y(d[1]))/6;
+      	  var format = d3.format(".3n"); //formatting --round the number
+          var xPos = parseFloat(d3.select(this).attr("x"));
+          var yPos = parseFloat(d3.select(this).attr("y"));
+          var height = parseFloat(d3.select(this).attr("height"))
+		d3.select(this).attr("stroke","#444444").attr("stroke-width",0.8);
+
+		console.log(d3.select(this))
+		
+		//show tooltips
+		tip.style("opacity", .9);
+		console.log(d)
+      	tip.html(d.data.Company +"<br>"+  "Percentage: "+ format(percentage)+"%")
+      	.style("left", (d3.event.pageX +10) + "px")
+		.style("top", (d3.event.pageY) + "px");
+      		})
+
+      .on("mouseout", function(){
+      	//hide tooltips
+          svg.select(".tooltip").remove();
+          d3.select(this).attr("stroke","white").attr("stroke-width",0.1);
+		  tip.hide });
+
+// axis
+  g.append("g")
+      .attr("class", "axis")
+      .attr("transform", "translate(0," + height + ")")
+      .call(d3.axisBottom(x));
+
+  g.append("g")
+      .attr("class", "axis axis--y")
+      .attr("font-family", "sans-serif")
+      .call(d3.axisLeft(y).ticks(10, "%"));
+
+
+//legend
+ var legend = svg.selectAll(".legend")
+    .data(data.columns.slice(1))
+    .enter().append("g")
+    .attr("class", "legend")
+    .attr("transform", function(d, i) { return "translate(0," + i * 20 + ")"; })// from below
+    .attr("class", function (d) {
+        legendClassArray.push(d.replace(/\s/g, '')); //remove spaces
+        legendClassArray_orig.push(d); //remove spaces
+        return "legend";
+      });
+
+legend.append("rect")
+    .attr("x", width + 60)
+    .attr("width", 18)
+    .attr("height", 18)
+    .style("fill", z)
+    .attr("id", function (d, i) {
+        return "id" + d.replace(/\s/g, '');
+      });
+      // .on("mouseover",function(){
+
+      //   if (active_link === "0") d3.select(this).style("cursor", "pointer");
+      //   else {
+      //     if (active_link.split("class").pop() === this.id.split("id").pop()) {
+      //       d3.select(this).style("cursor", "pointer");
+      //     } else d3.select(this).style("cursor", "auto");
+      //   }
+      // })
+      //  .on("click",function(d){
+
+      //   if (active_link === "0") { //nothing selected, turn on this selection
+      //     d3.select(this)
+      //       .style("stroke", "black")
+      //       .style("stroke-width", 2);
+
+      //       active_link = this.id.split("id").pop();
+      //       plotSingle(this);
+
+      //       //gray out the others
+      //       for (i = 0; i < legendClassArray.length; i++) {
+      //         if (legendClassArray[i] != active_link) {
+      //           d3.select("#id" + legendClassArray[i])
+      //             .style("opacity", 0.5);
+      //         } else sortBy = i; 
+      //       }
+
+      //   } else { //deactivate
+      //     if (active_link === this.id.split("id").pop()) {//active square selected; turn it OFF
+      //       d3.select(this)
+      //         .style("stroke", "none");
+
+      //       //restore remaining boxes to normal opacity
+      //       for (i = 0; i < legendClassArray.length; i++) {
+      //           d3.select("#id" + legendClassArray[i])
+      //             .style("opacity", 1);
+      //       }
+      //       restorePlot(d);
+
+      //       active_link = "0"; //reset
+      //     }
+
+      //   } //end active_link check;
+      // });
+
+legend.append("text")
+    .attr("x", width + 90)
+    .attr("y", 9)
+    .attr("dy", ".35em")
+    .style("text-anchor", "start")
+    .text(function(d) { return d.slice(); });
+
+// restore graph after a single selection
+  function restorePlot(d) {
+  	
+    //restore graph after a single selection
+    d3.selectAll(".bar:not(.class" + class_keep + ")")
+          .transition()
+          .duration(1000)
+          .delay(function() {
+            if (restoreXFlag) return 3000;
+            else return 750;
+          })
+          .attr("width", x.bandwidth()) //restore bar width
+          .style("opacity", 1);
+
+    //translate bars back up to original y-posn
+    d3.selectAll(".class" + class_keep)
+      .attr("x", function(d) { return x(d.data.Company); })
+      .transition()
+      .duration(1000)
+      .delay(function () {
+        if (restoreXFlag) return 2000; //bars have to be restored to orig posn
+        else return 0;
+      })
+      .attr("y", function(d) {
+        //return y(d.y1); //not exactly correct since not based on raw data value
+        return y(d.y1); 
+      });
+
+    //reset
+    restoreXFlag = false;
+
+  }
+   // plot only a single legend selection
+  function plotSingle(d) {
+
+   class_keep = d.id.split("id").pop();
+   idx = legendClassArray.indexOf(class_keep);
+
+    //erase all but selected bars by setting opacity to 0
+    d3.selectAll(".bar:not(.class" + class_keep + ")")
+          .transition()
+          .duration(1000)
+          .attr("width", 0) // use because svg has no zindex to hide bars so can't select visible bar underneath
+          .style("opacity", 0);
+
+    var state = d3.selectAll(".g");
+
+    state.nodes().forEach(function(d, i) {
+        var nodes = d.childNodes;
+        //get height and y posn of base bar and selected bar
+        h_keep = d3.select(nodes[idx]).attr("height");
+        y_keep = d3.select(nodes[idx]).attr("y");
+
+        h_base = d3.select(nodes[0]).attr("height");
+        y_base = d3.select(nodes[0]).attr("y");
+
+        h_shift = h_keep - h_base;
+        y_new = y_base - h_shift;
+
+   d3.select(nodes[idx])
+     .attr("y", y_new);
+    });
+   }
+
+});
+
+function type(d, i, columns) {
+  for (i = 1, t = 0; i < columns.length; ++i) t += d[columns[i]] = +d[columns[i]];
+  d.total = t;
+  return d;
+
+
+}
+
+</script>
